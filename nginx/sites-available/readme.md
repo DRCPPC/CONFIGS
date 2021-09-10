@@ -24,6 +24,6 @@ The configuration file in sites-available is not directly used by Nginx.
 
 To be served by Nginx, the configuration file must be symlinked to sites-enabled.
 
-To link cheeda.store to sites-enabled, run:
+To link ppc-drc.com to sites-enabled, run:
 
-    ln -s /etc/nginx/sites-available/cheeda.store /etc/nginx/sites-enabled/
+    ln -s /etc/nginx/sites-available/ppc-drc.com /etc/nginx/sites-enabled/
