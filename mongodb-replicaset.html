@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta content="IE=edge" http-equiv="X-UA-Compatible">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>MongoDB Replica set on ubuntu 20.04</title>
+  <style>
+    .highlight {
+      background: #3d3d3d !important;
+      color: white !important;
+      padding: 3px 7px;
+    }
+
+    .nano {
+      padding: 3px 7px;
+    }
+
+    code {
+      display: block;
+    }
+
+  </style>
+</head>
+
+<body>
+  <h1>MongoDB Replica set on ubuntu 20.04</h1>
+  <p>
+    MongoDB handles replication through an implementation called <em>replica sets</em>. Each running instance of
+    MongoDB that’s part of a given replica set is referred to as one of its <b>members</b>. Every replica set must have
+    one primary member and at least one secondary member.
+  </p>
+
+  <div>
+    <h2>What is a replica set?</h2>
+    <p>
+      A replica set is a group of one or more members that are all configured to replicate with each other. Replica sets
+      are used to provide high availability for your data. If a primary member fails, the replica set will automatically
+      elect a new primary member. The new primary member will then notify the other members of the failure, and they
+      will
+      all attempt to become primary members themselves. This process can take a few minutes, and the replica set will
+      keep
+      trying to find a new primary member until one is found.
+    </p>
+  </div>
+
+  <div>
+    <h3>To complete this guide, you will need:</h3>
+    <ol>
+      <li>
+        Three servers, each running Ubuntu 20.04. All three of these servers should have a non-root administrative user
+        and a firewall configured with UFW. To set this up, follow our initial server setup guide for Ubuntu 20.04.
+      </li>
+      <li>
+        MongoDB installed on each of your Ubuntu servers. To this end, follow our tutorial on How To Install MongoDB on
+        Ubuntu 20.04, making sure to complete each step on all three of your servers.
+      </li>
+    </ol>
+  </div>
+
+  <div>
+    <h2 id="step-1">
+      Step 1 — Configuring DNS Resolution
+    </h2>
+    <p>
+      When it comes time to initialize your replica set in <a href="#step-4">Step 4</a>, you’ll need to provide an
+      address
+      where each replica set member can be reached by the other two in the set. The MongoDB documentation recommends
+      against using IP addresses when configuring a replica set, since IP addresses can change unexpectedly. Instead,
+      MongoDB recommends using logical DNS hostnames when configuring replica sets.
+    </p>
+    <p>
+      hosts is a special file that allows you to assign human-readable hostnames to numerical IP addresses. This means
+      that if the IP address of any of your servers ever changes, you’ll only have to update the hosts file on the three
+      servers instead of reconfiguring the replica set.
+    </p>
+    <p>
+      On Linux and other Unix-like systems, hosts is stored in the /etc/ directory. On each of your three servers, edit
+      the file with your preferred text editor. Here, we’ll use nano:
+      <br>
+      <code>$ nano /etc/hosts</code>
+    </p>
+    <p>
+      After the first few lines which configure the localhost, add an entry for each member of the replica set. These
+      entries take the form of an IP address followed by the human-readable name of your choice, as in this example:
+      <em class="highlight">IP_address any_hostname</em>
+    </p>
+
+    <p>
+      You can configure your servers to use whatever hostname you’d like, but it can be helpful to make each hostname
+      descriptive. In examples throughout this guide, the three servers will use these hostnames:
+    <ul>
+      <li>mongo0.replset.member</li>
+      <li>mongo1.replset.member</li>
+      <li>mongo2.replset.member</li>
+    </ul>
+    Using these hostnames, your /etc/hosts files would look similar to the following highlighted lines:
+    <code>
+<pre>
+127.0.0.1   localhost
+10.0.0.0    mongo0.replset.member
+10.0.0.1    mongo1.replset.member
+10.0.0.2    mongo2.replset.member
+</pre>
+      </code>
+    </p>
+  </div>
+
+  <h2 id="step-2">Step 2 — Updating Each Server’s Firewall Configurations with UFW</h2>
+
+  <p>
+    <em>This step can be handle with security group in aws hostting service </em>
+  </p>
+
+  <p>
+    Assuming you followed the prerequisite initial server setup guide you will have set up a firewall on each of the
+    servers on which you’ve installed MongoDB and enabled access for the OpenSSH UFW profile. This is an important
+    security measure, as these firewalls currently block connections to any port on your servers, save for ssh
+    connections that present keys which align with those in each server’s respective authorized_keys file.
+  </p>
+  <p>
+    However, these firewalls will also block the MongoDB instances on each server from communicating with one another,
+    preventing you from initiating the replica set. To correct this, you’ll need to add new firewall rules to allow each
+    server access to the port on the other two servers on which MongoDB is listening for connections.
+  </p>
+
+  <p>
+    On mongo0, run the following ufw command to allow mongo1 access to port 27017 on mongo0:
+    <code>
+    $ sudo ufw allow from <b>mongo1_server_ip</b> to any port 27017
+  </code>
+    <br>
+    Be sure to change mogno1_server_ip to reflect your mongo1 server’s actual IP address. Note that ufw commands will
+    not
+    work with hostnames configured in the hosts file, so be sure to use your servers’ actual IP addresses in this
+    command
+    and the following ones. Also, if you’ve updated the Mongo instance on this server to use a non-default port, be sure
+    to change 27017 to reflect the port that your MongoDB instance is actually using. Then add another firewall rule to
+    give mongo2 access to the same port:
+    <code>
+      $ sudo ufw allow from <b>mongo2_server_ip</b> to any port 27017
+    </code>
+  </p>
+
+  <p>
+    Next, update the firewall rules for your other two servers. Run the following commands on mongo1, making sure to
+    change
+    the IP addresses to reflect those of mongo0 and mongo2, respectively:
+    <code>
+      $ sudo ufw allow from <b>mongo0_server_ip</b> to any port 27017
+      <br>
+      $ sudo ufw allow from <b>mongo2_server_ip</b> to any port 27017
+    </code>
+  </p>
+
+  <p>
+    Lastly, run these two commands on mongo2. Again, be sure that you enter the correct IP addresses for each server:
+    <code>
+      $ sudo ufw allow from <b>mongo0_server_ip</b> to any port 27017 <br>
+      $ sudo ufw allow from <b>mongo1_server_ip</b> to any port 27017
+    </code>
+  </p>
+
+  <p>
+    After adding these UFW rules, each of your three MongoDB servers will be allowed to access the port used by MongoDB
+    on the other two servers. <br> However, you won’t be able to test this yet, since the Mongo instance on each server
+    is currently blocking any external connections. After you enable replication by updating each MongoDB instance’s
+    configuration file in the next step, you will be able to perform this test.
+  </p>
+
+  <h2 id="step-3">Step 3 — Enabling Replication in Each Server’s MongoDB Configuration File</h2>
+
+  <p>
+    At this point, you’ve edited your servers’ <em class="highlight">/etc/hosts</em> files to configure hostnames which
+    will resolve to each one’s
+    IP address. You’ve also opened up each of your servers’ firewalls to allow the other two servers access to the
+    default MongoDB port, 27017. Now you’re ready to begin configuring the MongoDB installation on each server to enable
+    replication.
+  </p>
+
+  <p>
+    This step outlines how to do this by editing MongoDB’s configuration file, <em
+      class="highlight">/etc/mongod.conf</em>. You must complete every
+    procedure in this step on each server, but for demonstration purposes we will use mongo0 in examples.
+  </p>
+
+  <p>
+    On mongo0, open the MongoDB configuration file in your preferred text editor:
+    <code>
+    $ sudo nano /etc/mongod.conf
+  </code>
+    Even though you’ve opened up each server’s firewall to allow the other servers access to port 27017, MongoDB is
+    currently bound to 127.0.0.1, the local loopback network interface. This means that MongoDB is only able to accept
+    connections that originate on the server where it’s installed.
+  </p>
+
+  <p>
+    To allow remote connections, you must bind MongoDB to your servers’ publicly-routable IP addresses in addition to
+    127.0.0.1. This way, your MongoDB installation will be able to listen to connections made to your MongoDB server
+    from remote machines.
+    <br>
+    Find the network interfaces section. It will look like this by default:
+    <code>
+<pre>
+# network interfaces
+net:
+  port:   27017
+  bindIp: 127.0.0.1
+</pre>
+</code>
+  </p>
+
+  <p>
+    Append a comma to the line beginning with bindIp: followed by mongo0’s hostname or public IP address. This example
+    uses the hostname configured in <a href="step-1">Step 1</a>:
+    <code>
+<pre>
+# network interfaces
+net:
+  port:   27017
+  bindIp: 127.0.0.1,mongo0.replset.member
+</pre>
+  </code>
+  </p>
+
+  <p>
+    Next, find the line that reads #replication: towards the bottom of the file. It will look like this:
+    <code>
+    <pre>
+#replication:
+    </pre>
+  </code>
+    Uncomment this line, then add a <b>replSetName</b> directive below this line followed by a name which MongoDB will
+    use to identify the replica set:
+    <code>
+    <pre>
+replication:
+  replSetName: "rs0"
+    </pre>
+  </code>
+  </p>
+
+  <p>
+    In this example, the <b>replSetName</b> directive’s value is <i>"rs0"</i>. You can provide whatever name you’d like
+    here, but it can be helpful to use a descriptive name. Keep in mind, though, that each server’s mongod.conf file
+    must have the same name after the replSetName directive in order for each of their MongoDB instances to become
+    members of the same replica set.
+  </p>
+
+  <p>
+    Note that there are two spaces before the replSetName directive and that the name is wrapped in quotation marks,
+    both
+    of
+    which are necessary for this configuration to be read properly.
+    <br>
+    After updating these two sections of the file, net and replication, they will look like this:
+    <code>
+    <pre>
+# network interfaces
+net:
+  port:         27017
+  bindIp:       127.0.0.1,mongo0.replset.member
+
+replication:
+  replSetName:  "rs0"
+    </pre>
+  </code>
+  </p>
+
+  <p>
+    Save and close the file. Then make these same changes to the /etc/mongod.conf files on mongo1 and mongo2. After
+    doing
+    so, these updated sections will look like this in mongo1’s configuration file
+  </p>
+  <p>
+    After making these changes to each server’s mongod.conf file, save and close each file. Then, restart the mongod
+    service on each server by issuing the following command:
+    <code>
+$ sudo systemctl restart mongod
+    </code>
+    With that, you’ve enabled replication for each server’s MongoDB instance.
+  </p>
+
+  <p>
+    Note: At this point, you can use the <em class="highlight">nc</em> command to test whether the firewall rules you
+    added in Step 2 are correct. nc, short for <em class="highlight">netcat</em>, is a utility used to establish network
+    connections with TCP or
+    UDP. It’s useful for testing in cases like this because it allows you to specify both an IP address and a port
+    number when making a connection.
+    <br>
+    The following example nc command includes the <em class="highlight">-z</em> option, which limits the utility to only
+    scan for a listening daemon on the target server without sending it any data. Recall from the prerequisite
+    installation tutorial that MongoDB is running as a service daemon, making this option useful for testing
+    connectivity. It also includes the <em class="highlight">v</em> option which increases the command’s verbosity,
+    causing it to return more information than it would otherwise.
+    <br>
+    This example nc command shows an attempt to reach mongo1 from mongo0:
+    <code>
+$ nc -zv mongo1.replset.member 27017
+    </code>
+  </p>
+  <h2 id="step-4">Step 4 — Starting the Replica Set and Adding Members</h2>
+  <p>
+    Now that you’ve configured each of your three MongoDB installations, you can open up a MongoDB shell to initiate
+    replication and add each as a member.
+    <br>
+    For demonstration purposes, the examples in this step will use the MongoDB instance on mongo0 to initiate the
+    replica set. However, you can initiate replication from any server whose mongod.conf file has been appropriately
+    configured.
+
+    <code>
+      $ mongo
+    </code>
+
+    From the prompt, you can initiate a replica set from the mongo shell by running the <em
+      class="highlight">rs.initiate()</em> method. However,
+    running this method by itself would only initiate replication for the machine on which you run the method, and you’d
+    then need to add your other Mongo instances by issuing an rs.add() method for each member.
+    <br>
+    Recall that MongoDB stores its data in JSON-like structures known as documents. Because you’ve already edited the
+    mongod.conf file on each of your servers to configure the three Mongo instances for replication, you can instead
+    include a document that holds each member’s configuration details within the rs.initiate method. This will allow you
+    to start the replica set and add each member at once, rather than having to run multiple separate methods.
+    <br>
+    To do this, begin an rs.initiate() method by typing the following and pressing ENTER:
+    <code>
+  <pre>
+> rs.initiate(
+  {
+    _id: "rs0",
+    members: [
+      {
+        _id: 0,
+        host: "mongo0.replset.member"
+      },
+      {
+        _id: 1,
+        host: "mongo1.replset.member"
+      },
+      {
+        _id: 2,
+        host: "mongo2.replset.member"
+      }
+    ]
+  }
+)
+  </pre>
+</code>
+    Assuming that you entered all the details correctly, once you press ENTER after typing the closing parenthesis the
+    method will run and initiate the replica set. If the method returns "ok" : 1 in the output, it means that the
+    replica set was started correctly:
+
+    <code>
+  <pre>
+{
+  "ok" : 1,
+  "$clusterTime" : {
+      "clusterTime" : Timestamp(1612389071, 1),
+      "signature" : {
+          "hash" : BinData(0,"AAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+          "keyId" : NumberLong(0)
+      }
+  },
+  "operationTime" : Timestamp(1612389071, 1)
+}
+  </pre>
+</code>
+
+    If the replica set was initiated as expected, you’ll notice that the MongoDB client’s prompt will change from just a
+    greater-than sign (>) to the following:
+
+    <code>
+rs0:SECONDARY>
+</code>
+    OR
+    <code>
+rs0:PRIMARY>
+</code>
+
+  </p>
+
+  <div>
+    <h3>
+      Conclusion
+    </h3>
+    <p>
+      Database replication has found wide use as a strategy to improve performance, availability, and data security, to
+      the point where it’s recommended that any database used in a production environment has some form of replication
+      enabled. Replicas are also versatile, and can take on many different roles in a data architecture, like reporting
+      or
+      disaster recovery. The automatic failover feature found in MongoDB’s replica sets make them particularly valuable
+      for helping to ensure that your data remains highly available in the event of an outage.
+    </p>
+  </div>
+</body>
+
+</html>
