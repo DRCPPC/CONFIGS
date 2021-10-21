@@ -4,11 +4,11 @@ server {
         root /home/ubuntu/static/app;
         index index.html;
 
-        server_name ppc-drc.com www.ppc-drc.com;
+        server_name test.ppc-drc.com www.test.ppc-drc.com;
 
         location / {
                 try_files $uri $uri/ /index.html;
-                return 301 https://admin.ppc-drc.com;
+                return 301 https://admin.test.ppc-drc.com;
         }
 
         location /api {
