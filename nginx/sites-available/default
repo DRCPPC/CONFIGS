@@ -1,14 +1,27 @@
 server {
-        listen 80 default_server;
-        listen [::]:80 default_server;
+    listen 80 default_server;
+    listen [::]:80 default_server;
 
-        root /home/ubuntu/static/default;
-        index index.html index.htm index.nginx-debian.html;
+    root /home/ubuntu/static/admin;
+    index index.html index.htm index.nginx-debian.html;
 
-        server_name _;
+    server_name _;
 
-        location / {
-                try_files $uri $uri/ /index.html;
-                return 301 https://ppc-drc.com;
-        }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_pass http://localhost:3333;
+    }
+
+    location /files {
+        proxy_pass http://localhost:3333;
+    }
+
+    location /socket {
+        proxy_pass http://localhost:3333;
+    }
 }
