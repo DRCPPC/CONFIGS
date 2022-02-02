@@ -8,7 +8,7 @@ server {
 
         location / {
                 try_files $uri $uri/ /index.html;
-                return 301 https://admin.v2.dev.ppc-drc.com;
+                # return 301 https://admin.v2.dev.ppc-drc.com;
         }
 
         location /api {
@@ -24,4 +24,5 @@ server {
         location /socket {
                 proxy_pass http://localhost:3320;
         }
+
 }
